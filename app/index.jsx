@@ -7,9 +7,11 @@ import {
 	View,
 } from "react-native";
 import { FAB, Modal, PaperProvider, Portal } from "react-native-paper";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import AddNewSkill from "../components/AddNewSkill";
 import SkillCard from "../components/SkillCard";
 import * as repo from "../core/Repository.mjs";
+import { STORAGE_KEYS } from "../core/config.mjs";
 
 export default function Index() {
 	const [visible, setVisible] = useState(false);
@@ -26,8 +28,9 @@ export default function Index() {
 	const [loading, setLoading] = useState(false);
 
 	const handleDelete = (id) => {
-		// TODO: data is never removed from `AsyncStorage.getItem("quizAttempts")` - should be fine for small data, but it will cause issues down the line. - Need to delete data when a skill is deleted.
 		repo.deleteSkill(id);
+		// Quiz attempts are stored per-skill, so clean them up alongside the skill.
+		AsyncStorage.removeItem(`${STORAGE_KEYS.quizAttempts}:${id}`);
 		loadData();
 	};
 

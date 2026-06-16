@@ -1,8 +1,9 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useState } from "react";
 import { View, Image, Linking } from "react-native";
 import { Button, Text, TextInput } from "react-native-paper";
+import { validateApiKey } from "../core/gemini.mjs";
+import { STORAGE_KEYS } from "../core/config.mjs";
 
 export default function GetAPIKey({ reload }) {
 	const [text, setText] = useState("");
@@ -14,19 +15,14 @@ export default function GetAPIKey({ reload }) {
 
 	const submit = async () => {
 		setChecking(true);
-		const genAI = new GoogleGenerativeAI(text);
-		const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-		let success = true;
 		try {
-			await model.generateContent("Hi");
-		} catch (e) {
-			success = false;
-			alert("Invalid API Key!");
-		} finally {
-			if (success) {
-				await AsyncStorage.setItem("API_KEY", text);
+			if (await validateApiKey(text)) {
+				await AsyncStorage.setItem(STORAGE_KEYS.apiKey, text);
 				reload();
+			} else {
+				alert("Invalid API Key!");
 			}
+		} finally {
 			setChecking(false);
 		}
 	};

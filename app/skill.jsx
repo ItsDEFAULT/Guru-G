@@ -1,16 +1,7 @@
-import React, { useContext, useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
-import {
-	Card,
-	FAB,
-	List,
-	Modal,
-	PaperProvider,
-	Portal,
-} from "react-native-paper";
-import AddNewSkill from "../components/AddNewSkill";
+import React, { useContext, useState } from "react";
+import { ScrollView, View } from "react-native";
+import { List } from "react-native-paper";
 import { SkillContext } from "@/components/SkillContext";
-import { router } from "expo-router";
 import Markdown from "react-native-markdown-display";
 
 export default function Skill() {
@@ -31,6 +22,7 @@ export default function Skill() {
 				>
 					{openSkill.content.map((lesson) => (
 						<List.Item
+							key={lesson.topic}
 							title={lesson.topic}
 							onPress={() => {
 								setSelectedLesson(lesson);
