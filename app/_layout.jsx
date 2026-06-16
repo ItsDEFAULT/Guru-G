@@ -5,6 +5,7 @@ import { SkillContext } from "../components/SkillContext";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import GetApiKey from "../components/GetAPIKey";
 import { Alert, Button, Image } from "react-native";
+import { STORAGE_KEYS } from "../core/config.mjs";
 
 repo.createTable();
 export default function RootLayout() {
@@ -14,7 +15,7 @@ export default function RootLayout() {
 
 	useEffect(() => {
 		async function GetAPIKey() {
-			setApiKey(await AsyncStorage.getItem("API_KEY"));
+			setApiKey(await AsyncStorage.getItem(STORAGE_KEYS.apiKey));
 		}
 		GetAPIKey();
 	}, [refresh]);

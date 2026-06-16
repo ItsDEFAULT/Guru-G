@@ -1,99 +1,73 @@
-// This file is responsible for the generation of learning material for the user - based on the topic they provide
+// Generates a full learning pack (lessons + quiz) for a topic and persists it.
+//
+// Flow:
+//   1. Ask Gemini for a roadmap of lesson topics.
+//   2. Generate the content for every lesson in parallel.
+//   3. Generate one quiz spanning all topics.
+//   4. Store the result as a new skill.
+//
+// `setProgress` is called throughout with a 0-100 value so the UI can show a
+// progress bar.
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { createModel } from "./gemini.mjs";
+import { parseModelJson } from "./json.mjs";
+import { lessonsPrompt, lessonContentPrompt, quizPrompt } from "./prompts.mjs";
 import * as repo from "./Repository.mjs";
 
+// Progress budget (must sum to 100). Splitting the bar into named segments keeps
+// the magic numbers out of the control flow.
+const PROGRESS = {
+	roadmap: 10, // after the topic roadmap comes back
+	lessons: 75, // distributed across all lesson generations
+	quiz: 15, // generating the quiz
+};
+
+/**
+ * @param {string} masterTopic - what the user wants to learn
+ * @param {string} apiKey - Gemini API key
+ * @param {(value: number) => void} setProgress - 0-100 progress reporter
+ * @param {string} level - "beginner" | "intermediate" | "advanced"
+ */
 export default async function generateContent(
 	masterTopic,
 	apiKey,
-	setGenProgress,
+	setProgress,
 	level
 ) {
-	const genAI = new GoogleGenerativeAI(apiKey);
-	const promptToGenerateLessons = `
-        Give me a roadmap to learn about this topic: ${masterTopic}.
-        Divide it into lessons.
-		The lessons should be ${level} level
-        Response should follow this template:
-        {
-        topics: ["lesson 1", "lesson 2"...]
-        }
-        ONLY RETURN A VALID JSON OBJECT. GENERATE ATMOST 10 TOPICS
-    `;
+	const model = createModel(apiKey);
 
-	const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+	// 1. Roadmap of lesson topics.
+	const roadmap = await model.generateContent(
+		lessonsPrompt(masterTopic, level)
+	);
+	const topics = parseModelJson(roadmap.response.text()).topics;
+	if (!Array.isArray(topics) || topics.length === 0) {
+		throw new Error("Model returned no lesson topics.");
+	}
+	setProgress(PROGRESS.roadmap);
 
-	const result = await model.generateContent(promptToGenerateLessons);
-	const response = await result.response;
-	setGenProgress(10);
-
-	// Hack-y way to do it.. Might not always work.. but.. WE BALL XD
-	const text = response.text().replace("```json", "").replace("```", "");
-
-	const topics = JSON.parse(text).topics;
-	const lessons = [];
-	const quizzes = [];
-
-	console.log(topics);
-
-	// Generates the content for all the lessons
-	await Promise.all(
+	// 2. Lesson content, generated in parallel. Promise.all preserves the input
+	//    order, so `lessons` comes back in roadmap order with no fragile sorting.
+	const perLesson = PROGRESS.lessons / topics.length;
+	const lessons = await Promise.all(
 		topics.map(async (topic) => {
-			const promptToGenerateLessonContent = `
-			Explain everything there is know about this topic: "${topic}" in this context: "${masterTopic}". The content should be ${level} level. Be verbose. Return textbook like data.
-		`;
-			const lessonContent = await model.generateContent(
-				promptToGenerateLessonContent
+			const result = await model.generateContent(
+				lessonContentPrompt(topic, masterTopic, level)
 			);
-			lessons.push({
-				topic,
-				content: lessonContent.response.text(),
-			});
-			setGenProgress((p) => p + 5);
+			setProgress((p) => p + perLesson);
+			return { topic, content: result.response.text() };
 		})
 	);
 
-	lessons.sort((a, b) => {
-		const numA = parseInt(a.topic.match(/\d+/)[0], 10);
-		const numB = parseInt(b.topic.match(/\d+/)[0], 10);
+	// 3. Quiz spanning every topic.
+	const quizResult = await model.generateContent(quizPrompt(topics, level));
+	const quiz = parseModelJson(quizResult.response.text());
 
-		return numA - numB;
-	});
-
-	const quizTopics = topics.map((topic) => `"${topic}", `);
-	console.log(quizTopics);
-	const promptToGenerateQuiz = `
-			Generate a quiz on these topics: [${quizTopics}]. The questions should be ${level} level.
-			Return the data in this format:
-			 [
-				{
-					question: "",
-					options: [""],
-					solution: "",
-				}
-			]
-			ONLY RETURN A VALID JSON OBJECT. THE FIELD "SOLUTION" MUST MATCH ONE OF THE "OPTIONS". YOU CAN RETURN ATMOST 50 QUESTIONS.
-		`;
-	const quiz = await model.generateContent(promptToGenerateQuiz);
-	const quizObj = quiz.response
-		.text()
-		.replace("```json", "")
-		.replace("```", "");
-	quizzes.push(...JSON.parse(quizObj));
-	setGenProgress(95);
-
-	// const finalRes = {
-	// 	skill: masterTopic,
-	// 	lessons,
-	// 	quiz: quizzes,
-	// };
-
-	// console.log(finalRes);
-
+	// 4. Persist.
 	await repo.addNewSkill(
 		masterTopic,
 		JSON.stringify(lessons),
-		JSON.stringify(quizzes)
+		JSON.stringify(quiz)
 	);
-	setGenProgress(100);
+	setProgress(100);
 }

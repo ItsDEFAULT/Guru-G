@@ -2,6 +2,7 @@ import React, { useContext, useEffect, useState } from "react";
 import { View } from "react-native";
 import { TextInput, Button, Text, RadioButton } from "react-native-paper";
 import generateContent from "../core/GenerateContent.mjs";
+import { LEVELS, DEFAULT_LEVEL } from "../core/config.mjs";
 import { SkillContext } from "./SkillContext";
 
 const placeholders = [
@@ -57,7 +58,7 @@ const placeholders = [
 const AddNewSkill = ({ closeModal, setGenerating, generating }) => {
 	const [skill, setSkill] = useState("");
 	const [genProgress, setGenProgress] = useState(0);
-	const [level, setLevel] = useState("beginner");
+	const [level, setLevel] = useState(DEFAULT_LEVEL);
 	const [placeholder, setPlaceholder] = useState(null);
 	const { apiKey } = useContext(SkillContext);
 
@@ -106,33 +107,16 @@ const AddNewSkill = ({ closeModal, setGenerating, generating }) => {
 				onValueChange={(level) => setLevel(level)}
 				value={level}
 			>
-				<RadioButton.Item
-					label="Beginner"
-					value="beginner"
-					uncheckedColor="#666"
-					color="rgba(103, 80, 164, 1)"
-					labelStyle={{
-						color: "#000",
-					}}
-				/>
-				<RadioButton.Item
-					label="Intermediate"
-					value="intermediate"
-					uncheckedColor="#666"
-					color="rgba(103, 80, 164, 1)"
-					labelStyle={{
-						color: "#000",
-					}}
-				/>
-				<RadioButton.Item
-					label="Advanced"
-					value="advanced"
-					uncheckedColor="#666"
-					color="rgba(103, 80, 164, 1)"
-					labelStyle={{
-						color: "#000",
-					}}
-				/>
+				{LEVELS.map(({ value, label }) => (
+					<RadioButton.Item
+						key={value}
+						label={label}
+						value={value}
+						uncheckedColor="#666"
+						color="rgba(103, 80, 164, 1)"
+						labelStyle={{ color: "#000" }}
+					/>
+				))}
 			</RadioButton.Group>
 			<Button
 				mode="contained"
@@ -140,7 +124,9 @@ const AddNewSkill = ({ closeModal, setGenerating, generating }) => {
 				onPress={handleSubmit}
 				style={{ marginTop: 20 }}
 			>
-				{generating ? `Cooking your lessons...${genProgress}%` : "Submit"}
+				{generating
+					? `Cooking your lessons...${Math.round(genProgress)}%`
+					: "Submit"}
 			</Button>
 		</View>
 	);
