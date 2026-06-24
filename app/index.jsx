@@ -40,15 +40,25 @@ export default function Index() {
 					console.log("No SKILLS stored in DB");
 					return;
 				}
-				setSkills(
-					data.map((row) => ({
-						skill: row.skill,
-						id: row.id,
-						content: JSON.parse(row.content),
-						quiz: JSON.parse(row.quiz),
-						highScore: row.highScore,
-					}))
-				);
+				// Guard each row's JSON so one corrupt record doesn't blow away the
+				// whole list (a partially-saved generation used to crash the screen).
+				const parsed = data
+					.map((row) => {
+						try {
+							return {
+								skill: row.skill,
+								id: row.id,
+								content: JSON.parse(row.content),
+								quiz: JSON.parse(row.quiz),
+								highScore: row.highScore,
+							};
+						} catch (e) {
+							console.warn(`Skipping corrupt skill row ${row.id}`, e);
+							return null;
+						}
+					})
+					.filter(Boolean);
+				setSkills(parsed);
 			})
 			.finally(() => setLoading(false));
 	};
@@ -84,7 +94,7 @@ export default function Index() {
 					{skills.map((skill, index) => (
 						<SkillCard
 							skill={skill}
-							key={index}
+							key={skill.id}
 							handleDelete={handleDelete}
 							isLastEle={index === skills.length - 1}
 						/>

@@ -2,89 +2,118 @@
 
 import * as SQLite from "expo-sqlite";
 
-/* 
-	TODO: 
+/*
+	TODO:
 	Currently, all the data is stored in a single table and this table is loaded into memory.
-	This will be fine for small amounts of data, but the app is bound to start lagging if the user 
-	generates a lot of content. 
+	This will be fine for small amounts of data, but the app is bound to start lagging if the user
+	generates a lot of content.
 
 	- Need to split data into multiple tables and paginate the fetch calls.
 */
 
-export async function createTable() {
-	const db = await SQLite.openDatabaseAsync("GURU-G");
-	const CREATE_TABLE = `
-    CREATE TABLE IF NOT EXISTS skills (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        skill TEXT,
-        content TEXT,
-        quiz TEXT,
-        highScore FLOAT DEFAULT 0
-    );`;
+const DB_NAME = "GURU-G";
 
-	await db.execAsync(CREATE_TABLE);
-	db.closeAsync();
-	console.log("CREATED the skills TABLE!");
+// Memoized "the table exists" promise. Every query awaits this first so we no
+// longer race the fire-and-forget createTable() that used to run at import time
+// (which could surface as a "no such table: skills" error on a cold start).
+let tableReady = null;
+
+export function createTable() {
+	if (!tableReady) {
+		tableReady = (async () => {
+			const db = await SQLite.openDatabaseAsync(DB_NAME);
+			try {
+				await db.execAsync(`
+		    CREATE TABLE IF NOT EXISTS skills (
+		        id INTEGER PRIMARY KEY AUTOINCREMENT,
+		        skill TEXT,
+		        content TEXT,
+		        quiz TEXT,
+		        highScore FLOAT DEFAULT 0
+		    );`);
+				console.log("CREATED the skills TABLE!");
+			} finally {
+				await db.closeAsync();
+			}
+		})().catch((err) => {
+			// Reset so a later call can retry instead of caching a failure forever.
+			tableReady = null;
+			throw err;
+		});
+	}
+	return tableReady;
 }
 
 export async function deleteTable() {
-	const db = await SQLite.openDatabaseAsync("GURU-G");
-	const DELETE_TABLE = `DROP TABLE skills;`;
-
-	await db.execAsync(DELETE_TABLE);
-	db.closeAsync();
-	console.log("Deleted the skills TABLE!");
+	const db = await SQLite.openDatabaseAsync(DB_NAME);
+	try {
+		await db.execAsync(`DROP TABLE IF EXISTS skills;`);
+		console.log("Deleted the skills TABLE!");
+	} finally {
+		await db.closeAsync();
+		tableReady = null;
+	}
 }
 
 export async function getAllSkills() {
-	const db = await SQLite.openDatabaseAsync("GURU-G", {
+	await createTable();
+	const db = await SQLite.openDatabaseAsync(DB_NAME, {
 		useNewConnection: true,
 	});
-	const GET_ALL_SKILLS = `
-    SELECT id, skill, content, quiz, highScore FROM skills;
-    `;
-	console.log("FETCHED all the skills");
-	const res = await db.getAllAsync(GET_ALL_SKILLS);
-	db.closeAsync();
-	return res;
+	try {
+		const res = await db.getAllAsync(
+			`SELECT id, skill, content, quiz, highScore FROM skills;`
+		);
+		console.log("FETCHED all the skills");
+		return res;
+	} finally {
+		await db.closeAsync();
+	}
 }
 
 export async function addNewSkill(skill, content, quiz) {
-	const db = await SQLite.openDatabaseAsync("GURU-G");
-
-	// SQL injection who?
+	await createTable();
+	const db = await SQLite.openDatabaseAsync(DB_NAME);
 	const prepStmt = await db.prepareAsync(`
-        INSERT INTO skills (skill, content, quiz) VALUES 
+        INSERT INTO skills (skill, content, quiz) VALUES
         ($skill, $content, $quiz);
     `);
-
-	const res = await prepStmt.executeAsync({
-		$skill: skill,
-		$content: content,
-		$quiz: quiz,
-	});
-
-	await prepStmt.finalizeAsync();
-	console.log("NEW SKILL INSERTED IN THE DB");
-	return res;
+	try {
+		const res = await prepStmt.executeAsync({
+			$skill: skill,
+			$content: content,
+			$quiz: quiz,
+		});
+		console.log("NEW SKILL INSERTED IN THE DB");
+		return res;
+	} finally {
+		await prepStmt.finalizeAsync();
+		await db.closeAsync();
+	}
 }
 
 export async function updateBestScore(id, highScore) {
-	const db = await SQLite.openDatabaseAsync("GURU-G");
-	const UPDATE_HIGH_SCORE = `
-    UPDATE skills SET highScore = ${highScore} WHERE id = ${id}
-    `;
-	await db.runAsync(UPDATE_HIGH_SCORE);
-	db.closeAsync();
-	console.log("UPDATED HIGH SCORE IN DB");
+	await createTable();
+	const db = await SQLite.openDatabaseAsync(DB_NAME);
+	try {
+		// Parameterized to avoid SQL injection / breakage on odd values.
+		await db.runAsync(`UPDATE skills SET highScore = ? WHERE id = ?;`, [
+			highScore,
+			id,
+		]);
+		console.log("UPDATED HIGH SCORE IN DB");
+	} finally {
+		await db.closeAsync();
+	}
 }
 
 export async function deleteSkill(id) {
-	const db = await SQLite.openDatabaseAsync("GURU-G");
-	const DELETE_SKILL = `
-    DELETE FROM skills WHERE id = ${id}
-    `;
-	await db.runAsync(DELETE_SKILL);
-	db.closeAsync();
-	console.log("DELETED A SKILL");
+	await createTable();
+	const db = await SQLite.openDatabaseAsync(DB_NAME);
+	try {
+		await db.runAsync(`DELETE FROM skills WHERE id = ?;`, [id]);
+		console.log("DELETED A SKILL");
+	} finally {
+		await db.closeAsync();
+	}
 }

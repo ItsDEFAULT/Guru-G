@@ -6,11 +6,16 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import GetApiKey from "../components/GetAPIKey";
 import { Alert, Button, Image } from "react-native";
 
-repo.createTable();
 export default function RootLayout() {
 	const [openSkill, setOpenSkill] = useState(null);
 	const [apiKey, setApiKey] = useState(null);
 	const [refresh, setRefresh] = useState(false);
+
+	useEffect(() => {
+		// Warm the DB schema once at startup. Queries also await this internally,
+		// but doing it here surfaces any failure instead of swallowing it.
+		repo.createTable().catch((e) => console.warn("Failed to init DB", e));
+	}, []);
 
 	useEffect(() => {
 		async function GetAPIKey() {

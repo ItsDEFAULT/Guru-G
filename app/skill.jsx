@@ -20,6 +20,8 @@ export default function Skill() {
 
 	const handlePress = () => setExpanded(!expanded);
 
+	if (!openSkill) return <Text>Select a skill first.</Text>;
+
 	return (
 		<View>
 			<List.Section>
@@ -29,8 +31,9 @@ export default function Skill() {
 					expanded={expanded}
 					onPress={handlePress}
 				>
-					{openSkill.content.map((lesson) => (
+					{openSkill.content.map((lesson, idx) => (
 						<List.Item
+							key={idx}
 							title={lesson.topic}
 							onPress={() => {
 								setSelectedLesson(lesson);

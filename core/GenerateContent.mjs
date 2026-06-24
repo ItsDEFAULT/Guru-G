@@ -2,6 +2,7 @@
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import * as repo from "./Repository.mjs";
+import { extractJson } from "./extractJson.mjs";
 
 export default async function generateContent(
 	masterTopic,
@@ -9,6 +10,11 @@ export default async function generateContent(
 	setGenProgress,
 	level
 ) {
+	if (!apiKey) throw new Error("Missing Gemini API key");
+	if (!masterTopic || !masterTopic.trim()) {
+		throw new Error("A topic is required to generate content");
+	}
+
 	const genAI = new GoogleGenerativeAI(apiKey);
 	const promptToGenerateLessons = `
         Give me a roadmap to learn about this topic: ${masterTopic}.
@@ -27,17 +33,19 @@ export default async function generateContent(
 	const response = await result.response;
 	setGenProgress(10);
 
-	// Hack-y way to do it.. Might not always work.. but.. WE BALL XD
-	const text = response.text().replace("```json", "").replace("```", "");
-
-	const topics = JSON.parse(text).topics;
-	const lessons = [];
-	const quizzes = [];
+	const parsed = extractJson(response.text());
+	const topics = Array.isArray(parsed?.topics) ? parsed.topics : null;
+	if (!topics || topics.length === 0) {
+		throw new Error("The model did not return any lesson topics");
+	}
 
 	console.log(topics);
 
-	// Generates the content for all the lessons
-	await Promise.all(
+	// Generate every lesson concurrently. We use allSettled (not Promise.all) so
+	// a single failed lesson no longer aborts the entire generation. The results
+	// array preserves the order of `topics`, so the lessons are already sorted by
+	// the roadmap order -- no fragile parse-the-number-out-of-the-title sort.
+	const lessonResults = await Promise.allSettled(
 		topics.map(async (topic) => {
 			const promptToGenerateLessonContent = `
 			Explain everything there is know about this topic: "${topic}" in this context: "${masterTopic}". The content should be ${level} level. Be verbose. Return textbook like data.
@@ -45,20 +53,18 @@ export default async function generateContent(
 			const lessonContent = await model.generateContent(
 				promptToGenerateLessonContent
 			);
-			lessons.push({
-				topic,
-				content: lessonContent.response.text(),
-			});
-			setGenProgress((p) => p + 5);
+			setGenProgress((p) => Math.min(p + 5, 90));
+			return { topic, content: lessonContent.response.text() };
 		})
 	);
 
-	lessons.sort((a, b) => {
-		const numA = parseInt(a.topic.match(/\d+/)[0], 10);
-		const numB = parseInt(b.topic.match(/\d+/)[0], 10);
+	const lessons = lessonResults
+		.filter((r) => r.status === "fulfilled")
+		.map((r) => r.value);
 
-		return numA - numB;
-	});
+	if (lessons.length === 0) {
+		throw new Error("Failed to generate any lesson content");
+	}
 
 	const quizTopics = topics.map((topic) => `"${topic}", `);
 	console.log(quizTopics);
@@ -75,20 +81,9 @@ export default async function generateContent(
 			ONLY RETURN A VALID JSON OBJECT. THE FIELD "SOLUTION" MUST MATCH ONE OF THE "OPTIONS". YOU CAN RETURN ATMOST 50 QUESTIONS.
 		`;
 	const quiz = await model.generateContent(promptToGenerateQuiz);
-	const quizObj = quiz.response
-		.text()
-		.replace("```json", "")
-		.replace("```", "");
-	quizzes.push(...JSON.parse(quizObj));
+	const quizParsed = extractJson(quiz.response.text());
+	const quizzes = Array.isArray(quizParsed) ? quizParsed : [];
 	setGenProgress(95);
-
-	// const finalRes = {
-	// 	skill: masterTopic,
-	// 	lessons,
-	// 	quiz: quizzes,
-	// };
-
-	// console.log(finalRes);
 
 	await repo.addNewSkill(
 		masterTopic,
